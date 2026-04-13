@@ -327,7 +327,7 @@ function App(): React.ReactElement {
                     label: `Requests (${requests.length})`,
                     children: (
                       <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
-                        <RequestLog requests={requests} selectedId={selectedRequestId} onSelect={setSelectedRequestId} />
+                        <RequestLog requests={requests} selectedId={selectedRequestId} onSelect={(r) => setSelectedRequestId(r.id)} />
                         <RequestDetail request={selectedRequest} hooks={hooks} />
                       </div>
                     )
