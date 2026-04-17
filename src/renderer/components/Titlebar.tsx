@@ -1,14 +1,15 @@
-import React, { useState, useEffect, useCallback } from 'react'
-import { IconMinimize, IconMaximize, IconClose, IconSun, IconMoon, IconGlobe, IconCode, IconRobot } from '../ui/Icons'
+import React, { useState, useEffect, useCallback, useRef } from 'react'
+import { IconMinimize, IconMaximize, IconClose, IconGlobe, IconCode, IconRobot } from '../ui/Icons'
 import { useLocale } from '../i18n'
 import type { LocaleKey } from '../i18n'
+import { THEMES } from '../theme'
 import styles from './Titlebar.module.css'
 
 export type AppView = 'browser' | 'inspector' | 'report'
 
 interface TitlebarProps {
-  theme: 'dark' | 'light'
-  onThemeToggle: () => void
+  theme: string
+  onThemeChange: (themeId: string) => void
   locale: 'en' | 'zh'
   onLocaleToggle: () => void
   activeView: AppView
@@ -24,7 +25,7 @@ const navTabs: { key: AppView; labelKey: LocaleKey; icon: React.ReactNode }[] = 
 
 const Titlebar: React.FC<TitlebarProps> = ({
   theme,
-  onThemeToggle,
+  onThemeChange,
   locale,
   onLocaleToggle,
   activeView,
@@ -33,10 +34,24 @@ const Titlebar: React.FC<TitlebarProps> = ({
 }) => {
   const { t } = useLocale()
   const [isMaximized, setIsMaximized] = useState(false)
+  const [themeOpen, setThemeOpen] = useState(false)
+  const themeRef = useRef<HTMLDivElement>(null)
 
   useEffect(() => {
     window.electronAPI.isWindowMaximized().then(setIsMaximized)
   }, [])
+
+  // Close theme popover on outside click
+  useEffect(() => {
+    if (!themeOpen) return
+    const handleClick = (e: MouseEvent) => {
+      if (themeRef.current && !themeRef.current.contains(e.target as Node)) {
+        setThemeOpen(false)
+      }
+    }
+    document.addEventListener('mousedown', handleClick)
+    return () => document.removeEventListener('mousedown', handleClick)
+  }, [themeOpen])
 
   const handleMinimize = useCallback(() => {
     window.electronAPI.minimizeWindow()
@@ -51,6 +66,8 @@ const Titlebar: React.FC<TitlebarProps> = ({
   const handleClose = useCallback(() => {
     window.electronAPI.closeWindow()
   }, [])
+
+  const currentTheme = THEMES.find(t => t.id === theme)
 
   return (
     <div className={styles.titlebar}>
@@ -89,10 +106,46 @@ const Titlebar: React.FC<TitlebarProps> = ({
           <span className={locale === 'en' ? styles.langActive : ''}>En</span>
         </button>
 
-        {/* Theme toggle */}
-        <button className={styles.actionBtn} onClick={onThemeToggle} title={theme === 'dark' ? 'Light mode' : 'Dark mode'}>
-          {theme === 'dark' ? <IconSun size={14} /> : <IconMoon size={14} />}
-        </button>
+        {/* Theme selector */}
+        <div ref={themeRef} style={{ position: 'relative' }}>
+          <button
+            className={styles.actionBtn}
+            onClick={() => setThemeOpen(prev => !prev)}
+            title={locale === 'zh' ? '切换主题' : 'Switch theme'}
+          >
+            <span
+              style={{
+                width: 10,
+                height: 10,
+                borderRadius: '50%',
+                background: currentTheme?.accent || '#60a5fa',
+                display: 'inline-block',
+                border: '1px solid var(--color-border-hover)',
+              }}
+            />
+          </button>
+
+          {themeOpen && (
+            <div className={styles.themePopover}>
+              {THEMES.map((t) => (
+                <button
+                  key={t.id}
+                  className={`${styles.themeItem} ${theme === t.id ? styles.themeItemActive : ''}`}
+                  onClick={() => { onThemeChange(t.id); setThemeOpen(false) }}
+                >
+                  <span
+                    className={styles.themeDot}
+                    style={{ background: t.accent }}
+                  />
+                  <span className={styles.themeName}>
+                    {locale === 'zh' ? t.name : t.nameEn}
+                  </span>
+                  {theme === t.id && <span className={styles.themeCheck}>✓</span>}
+                </button>
+              ))}
+            </div>
+          )}
+        </div>
 
         <div className={styles.separator} />
       </div>

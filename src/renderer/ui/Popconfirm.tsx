@@ -8,6 +8,8 @@ export interface PopconfirmProps {
   onCancel?: () => void
   okText?: string
   cancelText?: string
+  /** Horizontal alignment of the popover. Default: 'center' */
+  align?: 'center' | 'end'
   children: React.ReactNode
 }
 
@@ -17,6 +19,7 @@ export const Popconfirm: React.FC<PopconfirmProps> = ({
   onCancel,
   okText = 'OK',
   cancelText = 'Cancel',
+  align = 'center',
   children,
 }) => {
   const [open, setOpen] = useState(false)
@@ -54,7 +57,7 @@ export const Popconfirm: React.FC<PopconfirmProps> = ({
         {children}
       </div>
       {open && (
-        <div className={styles.popover}>
+        <div className={`${styles.popover} ${align === 'end' ? styles.popoverEnd : ''}`}>
           <div className={styles.message}>{title}</div>
           <div className={styles.actions}>
             <Button size="sm" onClick={handleCancel}>

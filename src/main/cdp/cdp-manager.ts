@@ -90,9 +90,16 @@ export class CdpManager extends EventEmitter {
     this.webContents = null
   }
 
-  private async send(method: string, params: Record<string, unknown>): Promise<Record<string, unknown>> {
+  /**
+   * Send a raw CDP command. Exposed for advanced use cases (e.g. stealth injection).
+   */
+  async sendCommand(method: string, params: Record<string, unknown>): Promise<Record<string, unknown>> {
     if (!this.webContents) throw new Error('No WebContents attached')
     return this.webContents.debugger.sendCommand(method, params) as Promise<Record<string, unknown>>
+  }
+
+  private async send(method: string, params: Record<string, unknown>): Promise<Record<string, unknown>> {
+    return this.sendCommand(method, params)
   }
 
   private handleCdpMessage(method: string, params: Record<string, unknown>): void {

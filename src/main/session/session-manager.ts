@@ -1,5 +1,5 @@
 import { v4 as uuidv4 } from "uuid";
-import { ipcMain } from "electron";
+import { ipcMain, session as electronSession } from "electron";
 import type { WebContents } from "electron";
 import type { Session } from "@shared/types";
 import type { SessionsRepo } from "../db/repositories";
@@ -8,17 +8,22 @@ import { CdpManager } from "../cdp/cdp-manager";
 import { CaptureEngine } from "../capture/capture-engine";
 import { JsInjector } from "../capture/js-injector";
 import { StorageCollector } from "../capture/storage-collector";
+import type { ProfileStore } from '../fingerprint/profile-store';
+import { buildStealthScript } from '../../preload/stealth-script';
+import { applyHttpSpoofing, removeHttpSpoofing } from '../fingerprint/http-spoofing';
 
-/** Per-tab capture bundle: CDP + JS hooks + storage */
+/** Per-tab capture bundle: CDP + JS hooks + storage + stealth cleanup */
 interface TabCaptureBundle {
   cdp: CdpManager;
   injector: JsInjector;
   storage: StorageCollector;
+  stealthCleanup?: () => void;
 }
 
 /**
  * SessionManager — Manages the lifecycle of capture sessions.
  * Coordinates per-tab CDP, JS injection, storage collection, and capture engine.
+ * Also provides standalone stealth (fingerprint) mode independent of capture.
  */
 export class SessionManager {
   private currentSessionId: string | null = null;
@@ -35,9 +40,19 @@ export class SessionManager {
     | null = null;
   private tabClosedHandler: ((data: { tabId: string }) => void) | null = null;
 
+  /** Standalone stealth mode — event-based fingerprint injection (no CDP) */
+  private stealthSessionId: string | null = null;
+  private stealthTabManager: TabManager | null = null;
+  private stealthCleanups = new Map<string, () => void>();
+  private stealthTabCreatedHandler:
+    | ((tabInfo: { id: string; url: string; title: string }) => void)
+    | null = null;
+  private stealthTabClosedHandler: ((data: { tabId: string }) => void) | null = null;
+
   constructor(
     private sessionsRepo: SessionsRepo,
     private captureEngine: CaptureEngine,
+    private profileStore?: ProfileStore,
   ) {}
 
   /**
@@ -53,6 +68,10 @@ export class SessionManager {
       stopped_at: null,
     };
     this.sessionsRepo.insert(session);
+    // Auto-generate fingerprint profile for the new session
+    if (this.profileStore) {
+      this.profileStore.getOrCreate(session.id);
+    }
     return session;
   }
 
@@ -73,11 +92,22 @@ export class SessionManager {
       await this.stopCapture(this.currentSessionId);
     }
 
+    // Suspend standalone stealth listeners — full capture pipeline includes stealth injection
+    if (this.stealthSessionId) {
+      this.suspendStealthListeners();
+    }
+
     this.currentSessionId = sessionId;
     this.tabManager = tabManager;
 
     // Start capture engine
     this.captureEngine.start(sessionId, rendererWebContents);
+
+    // Apply fingerprint HTTP spoofing
+    if (this.profileStore) {
+      const profile = this.profileStore.getOrCreate(sessionId);
+      applyHttpSpoofing(electronSession.defaultSession, profile);
+    }
 
     // Register global hook IPC listener (once for all tabs)
     this.hookIpcHandler = (_event, data) => {
@@ -159,13 +189,37 @@ export class SessionManager {
     // Start JS injector (injection only, no IPC listener)
     injector.start(webContents);
 
+    // Inject stealth script via CDP — runs BEFORE any page JS (critical for WAF challenges)
+    let stealthCleanup: (() => void) | undefined;
+    if (this.profileStore) {
+      const profile = this.profileStore.getOrCreate(this.currentSessionId!);
+      const stealthJs = buildStealthScript(JSON.stringify(profile));
+
+      // Use Page.addScriptToEvaluateOnNewDocument for early injection
+      // This ensures stealth runs before any page JavaScript, including WAF challenge scripts
+      try {
+        await cdp.sendCommand('Page.addScriptToEvaluateOnNewDocument', { source: stealthJs });
+      } catch (err) {
+        console.warn('[SessionManager] Failed to register stealth via CDP:', (err as Error).message);
+      }
+
+      // Also inject into current page immediately (for pages already loaded)
+      try {
+        webContents.executeJavaScript(stealthJs, true);
+      } catch { /* page not ready */ }
+
+      stealthCleanup = () => {
+        // CDP scripts are automatically removed when debugger detaches — no manual cleanup needed
+      };
+    }
+
     // Start storage collector
     storage.start(this.currentSessionId!, webContents);
     storage.on("storage-collected", (data) => {
       this.captureEngine.handleStorageCollected(data);
     });
 
-    this.tabCaptures.set(tabId, { cdp, injector, storage });
+    this.tabCaptures.set(tabId, { cdp, injector, storage, stealthCleanup });
   }
 
   /**
@@ -178,6 +232,7 @@ export class SessionManager {
     // Stop storage FIRST — its stop() does a final collectAll() that needs the debugger alive
     bundle.storage.stop();
     bundle.injector.stop();
+    bundle.stealthCleanup?.();
     bundle.cdp.stop();
     bundle.cdp.detach();
     this.tabCaptures.delete(tabId);
@@ -249,8 +304,192 @@ export class SessionManager {
     }
 
     this.captureEngine.stop();
+    // Remove HTTP spoofing (capture's own spoofing)
+    removeHttpSpoofing(electronSession.defaultSession);
     this.sessionsRepo.updateStatus(sessionId, "stopped", Date.now());
     this.currentSessionId = null;
+
+    // Restore standalone stealth if it was active before capture started
+    if (this.stealthSessionId && this.stealthTabManager) {
+      const profile = this.profileStore?.getOrCreate(this.stealthSessionId);
+      if (profile) {
+        applyHttpSpoofing(electronSession.defaultSession, profile);
+      }
+      this.restoreStealthListeners();
+    }
+  }
+
+  // =============================================
+  // Standalone Stealth (Fingerprint-Only) Mode
+  // Uses webContents events + executeJavaScript (no CDP debugger).
+  // CDP is only used during capture mode for early injection.
+  // =============================================
+
+  /**
+   * Enable standalone stealth mode — applies fingerprint injection to all tabs
+   * WITHOUT starting capture. Uses webContents events (no CDP debugger attachment).
+   */
+  async enableStealth(
+    sessionId: string,
+    tabManager: TabManager,
+  ): Promise<void> {
+    if (!this.profileStore) return;
+
+    // If capture is running, stealth is already handled by the capture pipeline
+    if (this.currentSessionId) return;
+
+    // Disable previous stealth if switching sessions
+    if (this.stealthSessionId && this.stealthSessionId !== sessionId) {
+      await this.disableStealth();
+    }
+
+    // Avoid re-enabling for the same session
+    if (this.stealthSessionId === sessionId) return;
+
+    this.stealthSessionId = sessionId;
+    this.stealthTabManager = tabManager;
+
+    // Apply HTTP-level spoofing (User-Agent, Client Hints, Accept-Language)
+    const profile = this.profileStore.getOrCreate(sessionId);
+    applyHttpSpoofing(electronSession.defaultSession, profile);
+
+    // Attach stealth to all existing tabs
+    for (const tab of tabManager.getAllTabs()) {
+      this.attachStealthListeners(tab.id, tab.view.webContents);
+    }
+
+    // Auto-attach/detach for new/closed tabs
+    this.stealthTabCreatedHandler = (tabInfo) => {
+      const tab = tabManager.getAllTabs().find((t) => t.id === tabInfo.id);
+      if (tab) {
+        this.attachStealthListeners(tab.id, tab.view.webContents);
+      }
+    };
+    this.stealthTabClosedHandler = (data) => {
+      this.detachStealthListeners(data.tabId);
+    };
+    tabManager.on("tab-created", this.stealthTabCreatedHandler);
+    tabManager.on("tab-closed", this.stealthTabClosedHandler);
+  }
+
+  /**
+   * Disable standalone stealth mode — removes fingerprint injection from all tabs.
+   */
+  async disableStealth(): Promise<void> {
+    // Detach all stealth listeners
+    for (const tabId of Array.from(this.stealthCleanups.keys())) {
+      this.detachStealthListeners(tabId);
+    }
+
+    // Remove tab event listeners
+    if (this.stealthTabManager) {
+      if (this.stealthTabCreatedHandler)
+        this.stealthTabManager.removeListener("tab-created", this.stealthTabCreatedHandler);
+      if (this.stealthTabClosedHandler)
+        this.stealthTabManager.removeListener("tab-closed", this.stealthTabClosedHandler);
+    }
+    this.stealthTabCreatedHandler = null;
+    this.stealthTabClosedHandler = null;
+    this.stealthTabManager = null;
+
+    // Remove HTTP spoofing
+    removeHttpSpoofing(electronSession.defaultSession);
+
+    this.stealthSessionId = null;
+  }
+
+  /**
+   * Attach stealth injection via webContents navigation events (no CDP).
+   * Injects the stealth script on every navigation.
+   */
+  private attachStealthListeners(
+    tabId: string,
+    webContents: WebContents,
+  ): void {
+    if (this.stealthCleanups.has(tabId)) return;
+    if (!this.profileStore || !this.stealthSessionId) return;
+
+    const profile = this.profileStore.getOrCreate(this.stealthSessionId);
+    const stealthJs = buildStealthScript(JSON.stringify(profile));
+
+    const onNavigate = () => {
+      try {
+        webContents.executeJavaScript(stealthJs, true);
+      } catch { /* page not ready or destroyed */ }
+    };
+
+    webContents.on("did-navigate", onNavigate);
+    webContents.on("did-navigate-in-page", onNavigate);
+
+    // Also inject into the current page immediately
+    try {
+      webContents.executeJavaScript(stealthJs, true);
+    } catch { /* page not ready */ }
+
+    this.stealthCleanups.set(tabId, () => {
+      webContents.removeListener("did-navigate", onNavigate);
+      webContents.removeListener("did-navigate-in-page", onNavigate);
+    });
+  }
+
+  /**
+   * Detach stealth listeners from a single tab.
+   */
+  private detachStealthListeners(tabId: string): void {
+    const cleanup = this.stealthCleanups.get(tabId);
+    if (cleanup) {
+      cleanup();
+      this.stealthCleanups.delete(tabId);
+    }
+  }
+
+  /**
+   * Temporarily suspend stealth listeners (before capture takes over).
+   */
+  private suspendStealthListeners(): void {
+    for (const tabId of Array.from(this.stealthCleanups.keys())) {
+      this.detachStealthListeners(tabId);
+    }
+    // Remove tab listeners — capture will manage its own
+    if (this.stealthTabManager) {
+      if (this.stealthTabCreatedHandler)
+        this.stealthTabManager.removeListener("tab-created", this.stealthTabCreatedHandler);
+      if (this.stealthTabClosedHandler)
+        this.stealthTabManager.removeListener("tab-closed", this.stealthTabClosedHandler);
+    }
+    this.stealthTabCreatedHandler = null;
+    this.stealthTabClosedHandler = null;
+  }
+
+  /**
+   * Restore stealth listeners after capture stops (if stealth was active).
+   */
+  private restoreStealthListeners(): void {
+    if (!this.stealthSessionId || !this.stealthTabManager) return;
+
+    const tabManager = this.stealthTabManager;
+
+    // Re-attach stealth to all tabs
+    for (const tab of tabManager.getAllTabs()) {
+      this.attachStealthListeners(tab.id, tab.view.webContents);
+    }
+
+    // Re-register tab listeners
+    this.stealthTabCreatedHandler = (tabInfo) => {
+      const tab = tabManager.getAllTabs().find((t) => t.id === tabInfo.id);
+      if (tab) {
+        this.attachStealthListeners(tab.id, tab.view.webContents);
+      }
+    };
+    this.stealthTabClosedHandler = (data) => {
+      this.detachStealthListeners(data.tabId);
+    };
+    tabManager.on("tab-created", this.stealthTabCreatedHandler);
+    tabManager.on("tab-closed", this.stealthTabClosedHandler);
+  }
+
+  getStealthSessionId(): string | null {
+    return this.stealthSessionId;
   }
 
   /**

@@ -22,6 +22,11 @@ export const zh = {
   'session.create': '创建',
   'session.selectOrCreate': '选择或创建一个会话开始',
   'session.selectForReport': '选择一个会话查看报告',
+  'session.emptyTitle': '欢迎使用 Anything',
+  'session.emptyStep1': '在左侧创建一个新会话',
+  'session.emptyStep2': '在浏览器中访问目标网站',
+  'session.emptyStep3': '开始抓包，操作网站触发请求',
+  'session.emptyStep4': '使用 AI 分析捕获的协议数据',
 
   // ControlBar
   'capture.start': '开始抓包',
@@ -94,6 +99,29 @@ export const zh = {
   'toast.envClearFailed': '清除浏览器环境失败',
   'toast.dataCleared': '抓包数据已清除',
   'toast.dataClearFailed': '清除数据失败',
+
+  // Fingerprint settings
+  'fingerprint.title': '指纹环境',
+  'fingerprint.noSession': '请先选择一个会话',
+  'fingerprint.summary': '当前指纹概要',
+  'fingerprint.platform': '平台',
+  'fingerprint.screen': '屏幕分辨率',
+  'fingerprint.dpr': '设备像素比',
+  'fingerprint.cpu': 'CPU 核心数',
+  'fingerprint.memory': '内存 (GB)',
+  'fingerprint.webgl': 'WebGL 渲染器',
+  'fingerprint.timezone': '时区',
+  'fingerprint.languages': '语言',
+  'fingerprint.webrtc': 'WebRTC 策略',
+  'fingerprint.canvas': 'Canvas 噪声种子',
+  'fingerprint.audio': '音频噪声种子',
+  'fingerprint.ua': 'User-Agent',
+  'fingerprint.regenerate': '随机生成新指纹',
+  'fingerprint.save': '保存修改',
+  'fingerprint.saved': '指纹配置已保存',
+  'fingerprint.regenerated': '已生成新指纹',
+  'fingerprint.detail': '详细配置',
+  'fingerprint.testLinks': '自测链接',
 } as const
 
 export type LocaleKey = keyof typeof zh

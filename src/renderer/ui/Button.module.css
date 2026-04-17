@@ -48,17 +48,18 @@
 
 /* Variant: primary */
 .primary {
-  background: var(--text-primary);
-  color: var(--color-base);
-  border-color: var(--text-primary);
+  background: var(--color-primary);
+  color: var(--color-primary-text);
+  border-color: var(--color-primary);
 }
 
 .primary:hover {
-  opacity: 0.9;
+  background: var(--color-primary-hover);
+  border-color: var(--color-primary-hover);
 }
 
 .primary:active {
-  opacity: 0.8;
+  opacity: 0.85;
 }
 
 /* Variant: ghost */

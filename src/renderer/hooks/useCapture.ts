@@ -220,19 +220,22 @@ export function useCapture(sessionId: string | null): UseCaptureReturn {
     // Load initial data
     loadData(sessionId);
 
-    // --- Batched request/hook buffering for performance ---
+    // --- Batched request/hook/storage buffering for performance ---
     const requestBuffer: CapturedRequest[] = [];
     const hookBuffer: JsHookRecord[] = [];
+    const storageBuffer: StorageSnapshot[] = [];
     let flushTimer: ReturnType<typeof setInterval> | null = null;
 
     const flush = () => {
-      if (requestBuffer.length > 0 || hookBuffer.length > 0) {
+      if (requestBuffer.length > 0 || hookBuffer.length > 0 || storageBuffer.length > 0) {
         const reqBatch = requestBuffer.splice(0);
         const hookBatch = hookBuffer.splice(0);
+        const storageBatch = storageBuffer.splice(0);
         setState((prev) => ({
           ...prev,
           requests: reqBatch.length > 0 ? [...prev.requests, ...reqBatch] : prev.requests,
           hooks: hookBatch.length > 0 ? [...hookBatch, ...prev.hooks] : prev.hooks,
+          snapshots: storageBatch.length > 0 ? [...prev.snapshots, ...storageBatch] : prev.snapshots,
         }));
       }
     };
@@ -251,6 +254,12 @@ export function useCapture(sessionId: string | null): UseCaptureReturn {
       hookBuffer.push(data);
     };
 
+    // Listen for new storage snapshots — buffer instead of immediate setState
+    const handleStorage = (data: StorageSnapshot) => {
+      if (data.session_id !== sessionIdRef.current) return;
+      storageBuffer.push(data);
+    };
+
     // Listen for analysis progress (streaming chunks)
     const handleAnalysisProgress = (chunk: string) => {
       setState((prev) => ({
@@ -261,6 +270,7 @@ export function useCapture(sessionId: string | null): UseCaptureReturn {
 
     window.electronAPI.onRequestCaptured(handleRequest);
     window.electronAPI.onHookCaptured(handleHook);
+    window.electronAPI.onStorageCaptured(handleStorage);
     window.electronAPI.onAnalysisProgress(handleAnalysisProgress);
 
     // Cleanup listeners on unmount or session change
@@ -269,6 +279,7 @@ export function useCapture(sessionId: string | null): UseCaptureReturn {
       flush(); // flush remaining buffered items
       window.electronAPI.removeAllListeners(IPC_CHANNELS.CAPTURE_REQUEST);
       window.electronAPI.removeAllListeners(IPC_CHANNELS.CAPTURE_HOOK);
+      window.electronAPI.removeAllListeners(IPC_CHANNELS.CAPTURE_STORAGE);
       window.electronAPI.removeAllListeners(IPC_CHANNELS.AI_PROGRESS);
     };
   }, [sessionId, loadData, clearData]);

@@ -119,6 +119,7 @@ export class CaptureEngine extends EventEmitter {
     }
 
     try { this.storageSnapshotsRepo.insert(snapshot) } catch { /* ignore */ }
+    this.sendToRenderer('capture:storage', snapshot)
   }
 
   private sendToRenderer(channel: string, data: unknown): void {

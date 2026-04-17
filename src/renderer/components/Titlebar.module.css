@@ -52,7 +52,7 @@
 
 .tab {
   padding: 0 14px;
-  margin: 4px 2px;
+  margin: 6px 2px;
   display: flex;
   align-items: center;
   gap: 7px;
@@ -189,4 +189,66 @@
 .windowBtnClose:hover {
   background: #e81123;
   color: var(--text-primary);
+}
+
+/* Theme popover */
+.themePopover {
+  position: absolute;
+  top: calc(100% + 6px);
+  right: 0;
+  width: 180px;
+  max-height: 400px;
+  overflow-y: auto;
+  background: var(--color-elevated);
+  border: 1px solid var(--color-border-hover);
+  border-radius: var(--radius-lg);
+  box-shadow: var(--shadow-lg);
+  padding: 4px;
+  z-index: var(--z-dropdown);
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+}
+
+.themeItem {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 10px;
+  border: none;
+  border-radius: var(--radius-badge);
+  background: none;
+  color: var(--text-secondary);
+  font-family: var(--font-sans);
+  font-size: var(--font-size-2xs);
+  cursor: pointer;
+  transition: background var(--transition-fast);
+  text-align: left;
+  width: 100%;
+}
+
+.themeItem:hover {
+  background: var(--color-hover);
+  color: var(--text-primary);
+}
+
+.themeItemActive {
+  color: var(--text-primary);
+  background: var(--color-selected);
+}
+
+.themeDot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  flex-shrink: 0;
+}
+
+.themeName {
+  flex: 1;
+}
+
+.themeCheck {
+  font-size: var(--font-size-3xs);
+  color: var(--color-accent);
 }

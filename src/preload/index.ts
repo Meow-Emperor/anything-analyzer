@@ -136,6 +136,18 @@ contextBridge.exposeInMainWorld("electronAPI", {
   enableMitmSystemProxy: () => ipcRenderer.invoke("mitm-proxy:enableSystemProxy"),
   disableMitmSystemProxy: () => ipcRenderer.invoke("mitm-proxy:disableSystemProxy"),
 
+  // Fingerprint
+  getFingerprintProfile: (sessionId: string) =>
+    ipcRenderer.invoke("fingerprint:get", sessionId),
+  updateFingerprintProfile: (profile: unknown) =>
+    ipcRenderer.invoke("fingerprint:update", JSON.stringify(profile)),
+  regenerateFingerprintProfile: (sessionId: string) =>
+    ipcRenderer.invoke("fingerprint:regenerate", sessionId),
+  enableFingerprint: (sessionId: string) =>
+    ipcRenderer.invoke("fingerprint:enable", sessionId),
+  disableFingerprint: () =>
+    ipcRenderer.invoke("fingerprint:disable"),
+
   // Tab events
   onTabCreated: (callback: (tab: unknown) => void) => {
     ipcRenderer.on("tabs:created", (_event, data) => callback(data));
@@ -156,6 +168,9 @@ contextBridge.exposeInMainWorld("electronAPI", {
   },
   onHookCaptured: (callback: (data: unknown) => void) => {
     ipcRenderer.on("capture:hook", (_event, data) => callback(data));
+  },
+  onStorageCaptured: (callback: (data: unknown) => void) => {
+    ipcRenderer.on("capture:storage", (_event, data) => callback(data));
   },
   onAnalysisProgress: (callback: (chunk: string) => void) => {
     ipcRenderer.on("ai:progress", (_event, chunk) => callback(chunk));

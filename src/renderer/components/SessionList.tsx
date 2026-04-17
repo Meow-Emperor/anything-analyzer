@@ -1,4 +1,4 @@
-import React, { useState } from 'react'
+import React, { useState, useEffect } from 'react'
 import { Button, Input, Modal, Empty } from '../ui'
 import { IconPlus, IconDelete } from '../ui/Icons'
 import { useLocale } from '../i18n'
@@ -13,6 +13,8 @@ interface SessionListProps {
   onDelete: (id: string) => Promise<void>
   onOpenSettings: () => void
   activeRequestCount?: number
+  /** Incrementing counter to trigger open-create-modal from outside */
+  createTrigger?: number
 }
 
 /**
@@ -43,6 +45,7 @@ const SessionList: React.FC<SessionListProps> = ({
   onDelete,
   onOpenSettings,
   activeRequestCount = 0,
+  createTrigger = 0,
 }) => {
   const { t } = useLocale()
   const [modalOpen, setModalOpen] = useState(false)
@@ -60,13 +63,22 @@ const SessionList: React.FC<SessionListProps> = ({
     window.electronAPI.setTargetViewVisible(false)
   }
 
+  // Open create modal when triggered externally
+  useEffect(() => {
+    if (createTrigger > 0) openModal()
+  }, [createTrigger]) // eslint-disable-line react-hooks/exhaustive-deps
+
   const closeModal = () => {
     setModalOpen(false)
     setFormName('')
     setFormUrl('')
     setNameError('')
     setUrlError('')
-    window.electronAPI.setTargetViewVisible(true)
+    // Only restore WebContentsView if a session is selected;
+    // otherwise the empty guide needs to stay clickable
+    if (currentSessionId) {
+      window.electronAPI.setTargetViewVisible(true)
+    }
   }
 
   const validate = (): boolean => {

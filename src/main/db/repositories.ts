@@ -4,7 +4,8 @@ import type {
   CapturedRequest,
   JsHookRecord,
   StorageSnapshot,
-  AnalysisReport
+  AnalysisReport,
+  FingerprintProfile,
 } from '@shared/types'
 
 // ============================================================
@@ -252,5 +253,47 @@ export class AnalysisReportsRepo {
 
   deleteBySession(sessionId: string): void {
     this.stmts.deleteBySession.run(sessionId)
+  }
+}
+
+// ============================================================
+// Fingerprint Profiles Repository
+// ============================================================
+
+export class FingerprintProfilesRepo {
+  private stmts: {
+    upsert: Database.Statement
+    findBySessionId: Database.Statement
+    delete: Database.Statement
+  }
+
+  constructor(private db: Database.Database) {
+    this.stmts = {
+      upsert: db.prepare(
+        `INSERT OR REPLACE INTO fingerprint_profiles (session_id, profile_json)
+         VALUES (@session_id, @profile_json)`
+      ),
+      findBySessionId: db.prepare(
+        'SELECT profile_json FROM fingerprint_profiles WHERE session_id = ?'
+      ),
+      delete: db.prepare('DELETE FROM fingerprint_profiles WHERE session_id = ?')
+    }
+  }
+
+  upsert(sessionId: string, profile: FingerprintProfile): void {
+    this.stmts.upsert.run({
+      session_id: sessionId,
+      profile_json: JSON.stringify(profile),
+    })
+  }
+
+  findBySessionId(sessionId: string): FingerprintProfile | null {
+    const row = this.stmts.findBySessionId.get(sessionId) as { profile_json: string } | undefined
+    if (!row) return null
+    return JSON.parse(row.profile_json)
+  }
+
+  delete(sessionId: string): void {
+    this.stmts.delete.run(sessionId)
   }
 }

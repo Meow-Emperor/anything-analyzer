@@ -91,6 +91,12 @@ export function runMigrations(db: Database.Database): void {
       report_content    TEXT
     );
 
+    -- Fingerprint profiles (one per session)
+    CREATE TABLE IF NOT EXISTS fingerprint_profiles (
+      session_id   TEXT PRIMARY KEY REFERENCES sessions(id) ON DELETE CASCADE,
+      profile_json TEXT NOT NULL
+    );
+
     -- Indexes
     CREATE INDEX IF NOT EXISTS idx_requests_session ON requests(session_id, sequence);
     CREATE INDEX IF NOT EXISTS idx_requests_url ON requests(url);
