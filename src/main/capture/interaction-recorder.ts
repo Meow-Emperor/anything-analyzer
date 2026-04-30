@@ -14,6 +14,7 @@ export class InteractionRecorder extends EventEmitter {
   private rendererWebContents: WebContents | null = null
   private recording = false
   private scriptContent: string | null = null
+  private injectedWebContents: Set<WebContents> = new Set()
 
   constructor(private repo: InteractionEventsRepo) {
     super()
@@ -37,6 +38,11 @@ export class InteractionRecorder extends EventEmitter {
     try {
       webContents.executeJavaScript(this.scriptContent, true)
     } catch { /* page not ready */ }
+
+    this.injectedWebContents.add(webContents)
+    webContents.once('destroyed', () => {
+      this.injectedWebContents.delete(webContents)
+    })
 
     // Set recording state
     if (this.recording) {
@@ -78,6 +84,7 @@ export class InteractionRecorder extends EventEmitter {
     this.recording = false
     this.sessionId = null
     this.rendererWebContents = null
+    this.injectedWebContents.clear()
   }
 
   /** Process interaction data from page injection script */
@@ -150,6 +157,16 @@ export class InteractionRecorder extends EventEmitter {
       this.scriptContent = readFileSync(scriptPath, 'utf-8')
     } catch {
       this.scriptContent = `console.log('[AnythingAnalyzer] Interaction hook script not found')`
+    }
+  }
+
+  private setRecordingState(recording: boolean): void {
+    for (const wc of this.injectedWebContents) {
+      if (wc.isDestroyed()) continue
+      wc.executeJavaScript(
+        `window.postMessage({type:'ar-interaction-control',recording:${recording}},'*')`,
+        true
+      ).catch(() => {})
     }
   }
 }

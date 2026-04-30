@@ -44,6 +44,7 @@ contextBridge.exposeInMainWorld("electronAPI", {
     ipcRenderer.invoke("browser:setRatio", ratio),
   setTargetViewVisible: (visible: boolean) =>
     ipcRenderer.invoke("browser:setVisible", visible),
+  toggleDevTools: () => ipcRenderer.invoke("browser:toggleDevTools"),
   exportFile: (defaultName: string, content: string) =>
     ipcRenderer.invoke("dialog:exportFile", defaultName, content),
 
@@ -147,6 +148,17 @@ contextBridge.exposeInMainWorld("electronAPI", {
   regenerateMitmCA: () => ipcRenderer.invoke("mitm-proxy:regenerateCA"),
   enableMitmSystemProxy: () => ipcRenderer.invoke("mitm-proxy:enableSystemProxy"),
   disableMitmSystemProxy: () => ipcRenderer.invoke("mitm-proxy:disableSystemProxy"),
+
+  // Interaction Recording
+  getInteractions: (sessionId: string, limit?: number) =>
+    ipcRenderer.invoke("interaction:getEvents", sessionId, limit),
+  getInteractionCount: (sessionId: string) =>
+    ipcRenderer.invoke("interaction:getCount", sessionId),
+  clearInteractions: (sessionId: string) =>
+    ipcRenderer.invoke("interaction:clear", sessionId),
+  onInteractionRecorded: (callback: (data: unknown) => void) => {
+    ipcRenderer.on("interaction:recorded", (_event, data) => callback(data));
+  },
 
   // Fingerprint
   getFingerprintProfile: (sessionId: string) =>

@@ -194,6 +194,16 @@ export function registerIpcHandlers(deps: {
     windowManager.setTargetViewVisible(visible);
   });
 
+  ipcMain.handle("browser:toggleDevTools", async () => {
+    const wc = windowManager.getTabManager()?.getActiveWebContents();
+    if (!wc) return;
+    if (wc.isDevToolsOpened()) {
+      wc.closeDevTools();
+    } else {
+      wc.openDevTools({ mode: 'detach' });
+    }
+  });
+
   // ---- Tab Management ----
 
   ipcMain.handle("tabs:create", async (_event, url?: string) => {

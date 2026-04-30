@@ -5,6 +5,7 @@ import type {
   StorageSnapshot,
   AnalysisReport,
   ChatMessage,
+  InteractionEvent,
 } from "@shared/types";
 import { IPC_CHANNELS } from "@shared/types";
 
@@ -13,6 +14,7 @@ interface UseCaptureState {
   hooks: JsHookRecord[];
   snapshots: StorageSnapshot[];
   reports: AnalysisReport[];
+  interactions: InteractionEvent[];
   isAnalyzing: boolean;
   analysisError: string | null;
   streamingContent: string;
@@ -37,6 +39,7 @@ const INITIAL_STATE: UseCaptureState = {
   hooks: [],
   snapshots: [],
   reports: [],
+  interactions: [],
   isAnalyzing: false,
   analysisError: null,
   streamingContent: "",
@@ -74,11 +77,12 @@ export function useCapture(sessionId: string | null): UseCaptureReturn {
   // Load all data for a session from main process
   const loadData = useCallback(async (sid: string) => {
     try {
-      const [requests, hooks, snapshots, reports] = await Promise.all([
+      const [requests, hooks, snapshots, reports, interactions] = await Promise.all([
         window.electronAPI.getRequests(sid),
         window.electronAPI.getHooks(sid),
         window.electronAPI.getStorage(sid),
         window.electronAPI.getReports(sid),
+        window.electronAPI.getInteractions(sid),
       ]);
 
       // Restore chat history for the latest report
@@ -128,6 +132,7 @@ export function useCapture(sessionId: string | null): UseCaptureReturn {
           hooks: hooks.sort((a, b) => b.timestamp - a.timestamp),
           snapshots,
           reports: reports.sort((a, b) => b.created_at - a.created_at),
+          interactions: (interactions || []).sort((a, b) => a.sequence - b.sequence),
           chatHistory,
         }));
       }
@@ -334,14 +339,32 @@ export function useCapture(sessionId: string | null): UseCaptureReturn {
     window.electronAPI.onStorageCaptured(handleStorage);
     window.electronAPI.onAnalysisProgress(handleAnalysisProgress);
 
+    // Listen for interaction recording events (debounced to avoid excessive DB queries)
+    let interactionDebounceTimer: ReturnType<typeof setTimeout> | null = null;
+    window.electronAPI.onInteractionRecorded(() => {
+      if (interactionDebounceTimer) clearTimeout(interactionDebounceTimer);
+      interactionDebounceTimer = setTimeout(() => {
+        if (sessionIdRef.current) {
+          window.electronAPI.getInteractions(sessionIdRef.current).then((interactions: InteractionEvent[]) => {
+            setState((prev) => ({
+              ...prev,
+              interactions: (interactions || []).sort((a, b) => a.sequence - b.sequence),
+            }));
+          }).catch(() => {});
+        }
+      }, 500);
+    });
+
     // Cleanup listeners on unmount or session change
     return () => {
       if (flushTimer) clearInterval(flushTimer);
+      if (interactionDebounceTimer) clearTimeout(interactionDebounceTimer);
       flush(); // flush remaining buffered items
       window.electronAPI.removeAllListeners(IPC_CHANNELS.CAPTURE_REQUEST);
       window.electronAPI.removeAllListeners(IPC_CHANNELS.CAPTURE_HOOK);
       window.electronAPI.removeAllListeners(IPC_CHANNELS.CAPTURE_STORAGE);
       window.electronAPI.removeAllListeners(IPC_CHANNELS.AI_PROGRESS);
+      window.electronAPI.removeAllListeners('interaction:recorded');
     };
   }, [sessionId, loadData, clearData]);
 

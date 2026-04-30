@@ -573,6 +573,7 @@ export interface ElectronAPI {
   reload: () => Promise<void>;
   setBrowserRatio: (ratio: number) => Promise<void>;
   setTargetViewVisible: (visible: boolean) => Promise<void>;
+  toggleDevTools: () => Promise<void>;
   exportFile: (defaultName: string, content: string) => Promise<boolean>;
   openExternal: (url: string) => Promise<void>;
 
@@ -673,6 +674,12 @@ export interface ElectronAPI {
   regenerateFingerprintProfile: (sessionId: string) => Promise<FingerprintProfile>;
   enableFingerprint: (sessionId: string) => Promise<void>;
   disableFingerprint: () => Promise<void>;
+
+  // Interaction Recording
+  getInteractions: (sessionId: string, limit?: number) => Promise<InteractionEvent[]>;
+  getInteractionCount: (sessionId: string) => Promise<number>;
+  clearInteractions: (sessionId: string) => Promise<void>;
+  onInteractionRecorded: (callback: (data: { type: string; sequence: number; timestamp: number }) => void) => void;
 }
 
 declare global {

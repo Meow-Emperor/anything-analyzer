@@ -8,6 +8,7 @@ interface StatusBarProps {
   status: SessionStatus | null
   requestCount: number
   hookCount: number
+  interactionCount?: number
   sessionName?: string
   activeView?: AppView
   llmModel?: string
@@ -18,6 +19,7 @@ const StatusBar: React.FC<StatusBarProps> = ({
   status,
   requestCount,
   hookCount,
+  interactionCount = 0,
   sessionName,
   activeView = 'browser',
   llmModel,
@@ -56,6 +58,18 @@ const StatusBar: React.FC<StatusBarProps> = ({
         <div className={styles.item}>
           <span className={styles.label}>{t('status.hooks')}</span>
           <span className={styles.value}>{hookCount}</span>
+        </div>
+      )}
+
+      {/* Interaction recording count */}
+      {activeView !== 'report' && interactionCount > 0 && (
+        <div className={styles.item}>
+          <span
+            className={`${styles.dot} ${status === 'running' ? styles.pulse : ''}`}
+            style={{ background: status === 'running' ? 'var(--color-error)' : 'var(--text-muted)' }}
+          />
+          <span className={styles.label}>{t('data.interactions')}</span>
+          <span className={styles.value}>{interactionCount}</span>
         </div>
       )}
 

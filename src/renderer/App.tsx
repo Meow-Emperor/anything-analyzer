@@ -14,6 +14,7 @@ import RequestDetail from './components/RequestDetail'
 import HookLog from './components/HookLog'
 import StorageView from './components/StorageView'
 import ReportView from './components/ReportView'
+import InteractionLog from './components/InteractionLog'
 import { useSession } from './hooks/useSession'
 import { useCapture } from './hooks/useCapture'
 import { useTabs } from './hooks/useTabs'
@@ -116,7 +117,7 @@ function App(): React.ReactElement {
   /** Ref to browser placeholder for reporting exact bounds to main process */
   const placeholderRef = useRef<HTMLDivElement>(null)
 
-  const { requests, hooks, snapshots, reports, isAnalyzing, analysisError, streamingContent, startAnalysis, cancelAnalysis, chatHistory, isChatting, chatError, sendFollowUp, clearCaptureData } = useCapture(currentSessionId)
+  const { requests, hooks, snapshots, reports, interactions, isAnalyzing, analysisError, streamingContent, startAnalysis, cancelAnalysis, chatHistory, isChatting, chatError, sendFollowUp, clearCaptureData } = useCapture(currentSessionId)
 
   const selectedRequest = requests.find(r => r.id === selectedRequestId) || null
 
@@ -395,6 +396,7 @@ function App(): React.ReactElement {
             onReload={handleReload}
             captureSlot={buildCaptureSlot()}
             onClearEnv={handleClearEnv}
+            onToggleDevTools={() => window.electronAPI.toggleDevTools()}
           />
 
           {/* Browser view placeholder — native WebContentsView overlays this area */}
@@ -474,6 +476,12 @@ function App(): React.ReactElement {
             >
               {t('data.storage')} <span style={inspectorTabCountStyle}>{snapshots.length}</span>
             </button>
+            <button
+              style={activeTab === 'interactions' ? inspectorTabActiveStyle : inspectorTabStyle}
+              onClick={() => setActiveTab('interactions')}
+            >
+              {t('data.interactions')} <span style={inspectorTabCountStyle}>{interactions.length}</span>
+            </button>
 
             {/* Spacer */}
             <div style={{ flex: 1 }} />
@@ -524,11 +532,15 @@ function App(): React.ReactElement {
             <div style={{ flex: 1, overflow: 'auto', padding: '0 12px' }}>
               <HookLog hooks={hooks} />
             </div>
-          ) : (
+          ) : activeTab === 'storage' ? (
             <div style={{ flex: 1, overflow: 'auto', padding: '0 12px' }}>
               <StorageView snapshots={snapshots} />
             </div>
-          )}
+          ) : activeTab === 'interactions' ? (
+            <div style={{ flex: 1, overflow: 'hidden', padding: '0 12px' }}>
+              <InteractionLog interactions={interactions} />
+            </div>
+          ) : null}
 
           {/* Bottom AnalyzeBar */}
           <AnalyzeBar
@@ -624,6 +636,7 @@ function App(): React.ReactElement {
         status={currentSession?.status ?? null}
         requestCount={requests.length}
         hookCount={hooks.length}
+        interactionCount={interactions.length}
         sessionName={currentSession?.name}
         activeView={activeView}
         llmModel={reports[0]?.llm_model}

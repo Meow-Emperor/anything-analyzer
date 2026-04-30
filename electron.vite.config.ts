@@ -24,6 +24,7 @@ export default defineConfig({
           index: resolve('src/preload/index.ts'),
           'hook-script': resolve('src/preload/hook-script.ts'),
           'interaction-hook': resolve('src/preload/interaction-hook.ts'),
+          'target-preload': resolve('src/preload/target-preload.ts'),
         }
       }
     }

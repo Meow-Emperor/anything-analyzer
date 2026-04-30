@@ -2,6 +2,7 @@ import { EventEmitter } from "events";
 import { v4 as uuidv4 } from "uuid";
 import { BrowserWindow, WebContentsView } from "electron";
 import type { WebContents, Session as ElectronSession } from "electron";
+import { join } from "path";
 
 interface TabInfo {
   id: string;
@@ -173,6 +174,7 @@ export class TabManager extends EventEmitter {
         sandbox: false,
         contextIsolation: true,
         nodeIntegration: false,
+        preload: join(__dirname, "../preload/target-preload.js"),
         ...(this.activeElectronSession
           ? { session: this.activeElectronSession }
           : {}),
